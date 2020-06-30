@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DnsClient;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ScannerLib
 {
@@ -53,17 +55,14 @@ namespace ScannerLib
             PingHost(hostname);
 
             // query dns latency
-            QueryDNS(hostname);
+            // QueryDNS(hostname);
 
             // optional long running task compute hops
             if (ComputeHops)
                 GetHops(hostname);
 
             var dns = GetLocalDNSIP();
-
-            CheckDNS(hostname, dns[0].ToString());
-
-		}
+        }
 
 		/// <summary>
 		/// retrieve dns for local client
@@ -157,119 +156,30 @@ namespace ScannerLib
             this.NumberOfHops = GetTraceRoute(hostname).ToArray().Length;
         }
 
-        private void QueryDNS(string hostname)
+        private async Task QueryDNS(string hostname, IPAddress dnsAddress)
         {
-            var watch = Stopwatch.StartNew();
-            var response = Dns.GetHostEntry(hostname);
-            watch.Stop();
+            long startTime = DateTime.Now.Ticks;
 
-            if (response != null)
+            var lookup = new LookupClient(dnsAddress, 53);
+
+            var result = await lookup.QueryAsync("google.com", QueryType.A);
+
+            long stopTime = DateTime.Now.Ticks;
+
+            if (lookup != null)
             {
-                this.LookupLatency = watch.ElapsedTicks;
+                this.LookupLatency = (stopTime - startTime) / 10000000;
             }
                
         }
 
-		private void CheckDNS(string hostname, string dnsServer)
-		{
-			const int IPPort = 53;
-			const string TransactionID1 = "Q1"; // Use transaction ID of Q1 and Q2 to identify our packet and DNS
-			const string TypeString = "\u0001" + "\u0000" + "\u0000" + "\u0001" + "\u0000" + "\u0000" + "\u0000" + "\u0000" + "\u0000" + "\u0000";
-			const string TrailerString = "\u0000" + "\u0000" + "\u0001" + "\u0000" + "\u0001";
-			const int DNSReceiveTimeout = 5000;
-			string URLNameStart, DomainName, QueryString, ReceiveString, IPResponse, sDeltaTime;
-			int URLNameStartLength, DomainNameLength, index, TransactionDNS;
-			long StartTime, StopTime;
-			string DeltaTime;
-			Socket DNSsocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-			DNSsocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveTimeout, DNSReceiveTimeout);
-			IPEndPoint dnsEP1 = new IPEndPoint(IPAddress.Parse(dnsServer), IPPort);
-
-			// Start the clock
-			StartTime = DateTime.Now.Ticks;
-
-			// Domain name for testing
-			DomainName = ".agilent.com";
-
-			// build query and send to dns
-			QueryString = TransactionID1 + TypeString + hostname + DomainName + TrailerString;
-			byte[] Sendbytes = Encoding.ASCII.GetBytes(QueryString);
-			DNSsocket.SendTo(Sendbytes, Sendbytes.Length, SocketFlags.None, dnsEP1);
-
-			byte[] Receivebytes = new byte[512];
-
-			try
-			{
-			// wait for a response up to timeout
-			more: DNSsocket.Receive(Receivebytes);
-
-
-				// make sure the message returned is ours
-				if (Receivebytes[0] == Sendbytes[0] && (Receivebytes[1] == 0x31) || (Receivebytes[1] == 0x32))
-				{
-                    if (Receivebytes[2] == 0x81 && Receivebytes[3] == 0x80)
-                    {
-                        // Get the time now
-                        StopTime = DateTime.Now.Ticks;
-                        DeltaTime = Convert.ToString((double)(StopTime - StartTime) / 10000000);
-
-                        // Decode the answers
-                        // Find the URL that was returned
-                        TransactionDNS = Receivebytes[1];
-                        ReceiveString = Encoding.ASCII.GetString(Receivebytes);
-                        index = 12;
-                        URLNameStartLength = Receivebytes[index];
-                        index++;
-                        URLNameStart = ReceiveString.Substring(index, URLNameStartLength);
-                        index = index + URLNameStartLength;
-                        DomainNameLength = Receivebytes[index];
-                        index++;
-                        DomainName = ReceiveString.Substring(index, DomainNameLength);
-                        index = index + DomainNameLength;
-                        index = index + 8;
-
-                        // Get the record type
-                        int ResponseType = Receivebytes[index];
-                        index = index + 9;
-
-                        // Get the IP address if applicable
-                        IPResponse = "";
-
-                        switch (ResponseType)
-                        {
-                            case 1:
-                                IPResponse = Convert.ToString(Receivebytes[index]) + "."
-                                    + Convert.ToString(Receivebytes[index + 1]) + "."
-                                    + Convert.ToString(Receivebytes[index + 2]) + "."
-                                    + Convert.ToString(Receivebytes[index + 3]); break;
-                            case 5: IPResponse = "CNAME"; break;
-                            case 6: IPResponse = "SOA"; break;
-                        }
-
-                        switch (TransactionDNS)
-                        {
-                            case 0x31:
-                                break;
-
-                            case 0x32:
-                                break;
-                        }
-
-                    }
-
-					goto more;
-				}
-			}
-			catch (SocketException e)
-			{
-                Console.WriteLine($"error: {e.Message}");
-			}
-			finally
-			{
-				// close the socket
-				DNSsocket.Close();
-			}
+		
 
 		}
 	}
+
+    public class LookupResult
+{
+
+}
 }
